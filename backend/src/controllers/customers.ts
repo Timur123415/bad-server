@@ -3,6 +3,7 @@ import { FilterQuery } from 'mongoose'
 import NotFoundError from '../errors/not-found-error'
 import Order from '../models/order'
 import User, { IUser } from '../models/user'
+import escapeRegExp from '../utils/escapeRegExp'
 
 // TODO: Добавить guard admin
 // eslint-disable-next-line max-len
@@ -92,7 +93,8 @@ export const getCustomers = async (
         }
 
         if (search) {
-            const searchRegex = new RegExp(search as string, 'i')
+            const escapedSearch = escapeRegExp(search as string)
+            const searchRegex = new RegExp(escapedSearch, 'i')
             const orders = await Order.find(
                 {
                     $or: [{ deliveryAddress: searchRegex }],
@@ -173,31 +175,24 @@ export const getCustomerById = async (
 
 // TODO: Добавить guard admin
 // Patch /customers/:id
-export const updateCustomer = async (
-    req: Request,
-    res: Response,
-    next: NextFunction
-) => {
-    try {
-        const updatedUser = await User.findByIdAndUpdate(
-            req.params.id,
-            req.body,
-            {
-                new: true,
-            }
-        )
-            .orFail(
-                () =>
-                    new NotFoundError(
-                        'Пользователь по заданному id отсутствует в базе'
-                    )
-            )
-            .populate(['orders', 'lastOrder'])
-        res.status(200).json(updatedUser)
-    } catch (error) {
-        next(error)
+// controllers/customers.ts
+export const updateCustomer = async (req: Request, res: Response, next: NextFunction) => {
+    const allowedFields = ['name', 'phone', 'email']
+    const updateData: Record<string, unknown> = {}
+    
+    for (const field of allowedFields) {
+        if (req.body[field] !== undefined) {
+            updateData[field] = req.body[field]
+        }
     }
+    
+    const updatedUser = await User.findByIdAndUpdate(
+        req.params.id,
+        updateData,
+        { new: true, runValidators: true }
+    )
 }
+
 
 // TODO: Добавить guard admin
 // Delete /customers/:id

@@ -10,6 +10,7 @@ import { selectOrderByNumber } from '../../services/selector'
 import { getCurrentUserOrderByNumber } from '../../services/slice/profile-orders/thunk'
 import { adapterOrderFromServer } from '../../utils/adapterOrderFromServer'
 import { Preloader } from '../preloader'
+import { sanitizeHtml } from '../../utils/sanitize'
 import styles from './profile.module.scss'
 
 const CloseButton = () => {
@@ -72,10 +73,10 @@ export default function ProfileOrderDetail() {
                     <>
                         {dataInfo.comment ? (
                             <div
-                                dangerouslySetInnerHTML={{
-                                    __html: dataInfo.comment,
-                                }}
-                            />
+                            dangerouslySetInnerHTML={{
+                                __html: sanitizeHtml(dataInfo.comment),
+                            }}
+                        />
                         ) : (
                             'Комментариев нет'
                         )}

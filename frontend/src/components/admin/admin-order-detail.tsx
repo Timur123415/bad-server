@@ -13,6 +13,7 @@ import { ordersActions } from '../../services/slice/orders'
 import { getOrderByNumber } from '../../services/slice/orders/thunk'
 import { adapterOrderFromServer } from '../../utils/adapterOrderFromServer'
 import { Preloader } from '../preloader'
+import { sanitizeHtml } from '../../utils/sanitize'
 import styles from './admin.module.scss'
 
 const ActionsButton = () => {
@@ -102,10 +103,10 @@ export default function AdminOrderDetail() {
                 render: (dataInfo: OrderData) => (
                     <>
                         <div
-                            dangerouslySetInnerHTML={{
-                                __html: dataInfo.comment,
-                            }}
-                        />
+    dangerouslySetInnerHTML={{
+        __html: sanitizeHtml(dataInfo.comment),
+    }}
+/>
                     </>
                 ),
             },
