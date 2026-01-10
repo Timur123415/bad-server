@@ -3,7 +3,7 @@ import { doubleCsrf } from 'csrf-csrf'
 import cookieParser from 'cookie-parser'
 import cors from 'cors'
 import 'dotenv/config'
-import express, { json, urlencoded, Request } from 'express'
+import express, { json, urlencoded, Request, Response } from 'express'
 import mongoose from 'mongoose'
 import path from 'path'
 import rateLimit from 'express-rate-limit'
@@ -18,20 +18,15 @@ import orderRouter from './routes/order'
 import auth from './middlewares/auth'
 
 // CSRF защита
-const { doubleCsrfProtection } = doubleCsrf({
+const { doubleCsrfProtection, generateCsrfToken } = doubleCsrf({
     getSecret: () => process.env.CSRF_SECRET || 'super-secret-csrf-key-change-in-production',
-    
-    // Обязательное поле - идентификатор сессии
     getSessionIdentifier: (req: Request) => {
-        // Используем IP + User-Agent как идентификатор
-        // Или можно использовать session id если есть сессии
         return req.ip || req.headers['user-agent'] || 'anonymous'
     },
-    
-    cookieName: '__Host-csrf',
+    cookieName: 'csrf-token',
     cookieOptions: {
         httpOnly: true,
-        sameSite: 'strict',
+        sameSite: 'lax',
         secure: process.env.NODE_ENV === 'production',
         path: '/',
     },
@@ -40,7 +35,7 @@ const { doubleCsrfProtection } = doubleCsrf({
 
 // CORS настройки
 const corsOptions = {
-    origin: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000'],
+    origin: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000', 'http://localhost'],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'x-csrf-token'],
@@ -49,23 +44,22 @@ const corsOptions = {
 // Rate limiting
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 100,
+    max: 1000,
     message: { message: 'Слишком много запросов, попробуйте позже' },
 })
 
 const authLimiter = rateLimit({
-    windowMs: 60 * 60 * 1000,
-    max: 5,
+    windowMs: 15 * 60 * 1000,
+    max: 50,
     message: { message: 'Слишком много попыток входа' },
 })
 
 const { PORT = 3000 } = process.env
 const app = express()
 
-// Важно для корректной работы req.ip за прокси
 app.set('trust proxy', 1)
 
-// Middleware - порядок важен!
+// Middleware
 app.use(helmet())
 app.use(cors(corsOptions))
 app.use(cookieParser())
@@ -77,6 +71,12 @@ app.use(serveStatic(path.join(__dirname, 'public')))
 app.use(limiter)
 app.use('/auth/login', authLimiter)
 app.use('/auth/register', authLimiter)
+
+// Endpoint для получения CSRF токена
+app.get('/csrf-token', (req: Request, res: Response) => {
+    const token = generateCsrfToken(req, res)
+    res.json({ csrfToken: token })
+})
 
 // Routes
 app.use('/auth', doubleCsrfProtection, authRouter)
