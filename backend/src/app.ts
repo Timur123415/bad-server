@@ -2,7 +2,7 @@ import { errors } from 'celebrate'
 import cookieParser from 'cookie-parser'
 import cors from 'cors'
 import 'dotenv/config'
-import express, { json, urlencoded, Request, Response } from 'express'
+import express, { json, urlencoded } from 'express'
 import mongoose from 'mongoose'
 import path from 'path'
 import rateLimit from 'express-rate-limit'
@@ -13,36 +13,23 @@ import errorHandler from './middlewares/error-handler'
 import serveStatic from './middlewares/serverStatic'
 import routes from './routes'
 
-// CORS настройки - явно указываем origin
+// CORS настройки
 const allowedOrigins = ['http://localhost:5173', 'http://localhost:3000', 'http://localhost']
 
 const corsOptions: cors.CorsOptions = {
-    origin: (origin, callback) => {
-        // Разрешаем запросы без origin (curl, мобильные приложения)
-        if (!origin) {
-            return callback(null, true)
-        }
-        
-        if (allowedOrigins.includes(origin)) {
-            callback(null, origin) // Возвращаем конкретный origin, а не true
-        } else {
-            callback(new Error('Not allowed by CORS'))
-        }
-    },
+    origin: allowedOrigins,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'x-csrf-token'],
 }
 
-// Rate limiting - строгий лимит
+// Rate limiting - строгий лимит для теста
 const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 минут
-    max: 100, // 100 запросов на 15 минут
+    windowMs: 1 * 60 * 1000, // 1 минута
+    max: 50, // 50 запросов в минуту
     message: { message: 'Слишком много запросов, попробуйте позже' },
     standardHeaders: true,
     legacyHeaders: false,
-    skipSuccessfulRequests: false,
-    skipFailedRequests: false,
 })
 
 const authLimiter = rateLimit({
