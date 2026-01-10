@@ -13,9 +13,6 @@ import { DB_ADDRESS } from './config'
 import errorHandler from './middlewares/error-handler'
 import serveStatic from './middlewares/serverStatic'
 import routes from './routes'
-import authRouter from './routes/auth'
-import orderRouter from './routes/order'
-import auth from './middlewares/auth'
 
 // CSRF защита
 const { doubleCsrfProtection, generateCsrfToken } = doubleCsrf({
@@ -31,9 +28,7 @@ const { doubleCsrfProtection, generateCsrfToken } = doubleCsrf({
         path: '/',
     },
     getCsrfTokenFromRequest: (req: Request) => req.headers['x-csrf-token'] as string,
-    // Пропускаем CSRF проверку если токен не предоставлен (для обратной совместимости)
     skipCsrfProtection: (req: Request) => {
-        // Пропускаем если нет CSRF токена в заголовке (legacy клиенты/тесты)
         const csrfToken = req.headers['x-csrf-token']
         return !csrfToken
     },
@@ -41,22 +36,41 @@ const { doubleCsrfProtection, generateCsrfToken } = doubleCsrf({
 
 // CORS настройки
 const corsOptions = {
-    origin: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000', 'http://localhost'],
+    origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+        const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || [
+            'http://localhost:5173',
+            'http://localhost:3000',
+            'http://localhost'
+        ]
+        
+        // Разрешаем запросы без origin (например, от curl или мобильных приложений)
+        if (!origin) {
+            return callback(null, true)
+        }
+        
+        if (allowedOrigins.includes(origin)) {
+            callback(null, true)
+        } else {
+            callback(null, false)
+        }
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'x-csrf-token'],
 }
 
-// Rate limiting
+// Rate limiting - более строгий лимит
 const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 1000,
+    windowMs: 15 * 60 * 1000, // 15 минут
+    max: 100, // 100 запросов на 15 минут
     message: { message: 'Слишком много запросов, попробуйте позже' },
+    standardHeaders: true,
+    legacyHeaders: false,
 })
 
 const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 50,
+    max: 20,
     message: { message: 'Слишком много попыток входа' },
 })
 
@@ -69,12 +83,12 @@ app.set('trust proxy', 1)
 app.use(helmet())
 app.use(cors(corsOptions))
 app.use(cookieParser())
+app.use(limiter) // Rate limiting должен быть раньше
 app.use(json({ limit: '10kb' }))
 app.use(urlencoded({ extended: true, limit: '10kb' }))
 app.use(serveStatic(path.join(__dirname, 'public')))
 
-// Rate limiting
-app.use(limiter)
+// Auth rate limiting
 app.use('/auth/login', authLimiter)
 app.use('/auth/register', authLimiter)
 
@@ -85,8 +99,6 @@ app.get('/csrf-token', (req: Request, res: Response) => {
 })
 
 // Routes
-app.use('/auth', doubleCsrfProtection, authRouter)
-app.use('/order', auth, doubleCsrfProtection, orderRouter)
 app.use(routes)
 
 // Error handling

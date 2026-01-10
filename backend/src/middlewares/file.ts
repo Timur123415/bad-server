@@ -7,6 +7,9 @@ import path from 'path'
 type DestinationCallback = (error: Error | null, destination: string) => void
 type FileNameCallback = (error: Error | null, filename: string) => void
 
+const MIN_FILE_SIZE = 2 * 1024 // 2KB
+const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
+
 const storage = multer.diskStorage({
     destination: (
         _req: Request,
@@ -25,7 +28,6 @@ const storage = multer.diskStorage({
     },
 
     filename: (req, file, cb) => {
-        // Генерируем безопасное имя файла
         const ext = path.extname(file.originalname).toLowerCase()
         const allowedExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.svg']
         
@@ -58,12 +60,21 @@ const fileFilter = (
     return cb(null, true)
 }
 
-export default multer({
+const upload = multer({
     storage,
     fileFilter,
     limits: {
-        fileSize: 5 * 1024 * 1024, 
-        files: 1, 
+        fileSize: MAX_FILE_SIZE,
+        files: 1,
     },
 })
 
+// Middleware для проверки минимального размера файла
+export const checkMinFileSize = (req: Request, res: any, next: any) => {
+    if (req.file && req.file.size < MIN_FILE_SIZE) {
+        return res.status(400).json({ message: 'Файл слишком маленький. Минимальный размер: 2KB' })
+    }
+    next()
+}
+
+export default upload

@@ -5,9 +5,9 @@ import Order from '../models/order'
 import User, { IUser } from '../models/user'
 import escapeRegExp from '../utils/escapeRegExp'
 
-// TODO: Добавить guard admin
-// eslint-disable-next-line max-len
-// Get GET /customers?page=2&limit=5&sort=totalAmount&order=desc&registrationDateFrom=2023-01-01&registrationDateTo=2023-12-31&lastOrderDateFrom=2023-01-01&lastOrderDateTo=2023-12-31&totalAmountFrom=100&totalAmountTo=1000&orderCountFrom=1&orderCountTo=10
+const MAX_LIMIT = 10
+const ALLOWED_SORT_FIELDS = ['createdAt', 'name', 'totalAmount', 'orderCount', 'lastOrderDate']
+
 export const getCustomers = async (
     req: Request,
     res: Response,
@@ -29,6 +29,15 @@ export const getCustomers = async (
             orderCountTo,
             search,
         } = req.query
+
+        // Нормализация лимита
+        const normalizedLimit = Math.min(Math.max(1, Number(limit) || 10), MAX_LIMIT)
+        const normalizedPage = Math.max(1, Number(page) || 1)
+
+        // Валидация sortField
+        const safeSortField = ALLOWED_SORT_FIELDS.includes(sortField as string) 
+            ? sortField as string 
+            : 'createdAt'
 
         const filters: FilterQuery<Partial<IUser>> = {}
 
@@ -111,15 +120,12 @@ export const getCustomers = async (
         }
 
         const sort: { [key: string]: any } = {}
-
-        if (sortField && sortOrder) {
-            sort[sortField as string] = sortOrder === 'desc' ? -1 : 1
-        }
+        sort[safeSortField] = sortOrder === 'desc' ? -1 : 1
 
         const options = {
             sort,
-            skip: (Number(page) - 1) * Number(limit),
-            limit: Number(limit),
+            skip: (normalizedPage - 1) * normalizedLimit,
+            limit: normalizedLimit,
         }
 
         const users = await User.find(filters, null, options).populate([
@@ -139,15 +145,15 @@ export const getCustomers = async (
         ])
 
         const totalUsers = await User.countDocuments(filters)
-        const totalPages = Math.ceil(totalUsers / Number(limit))
+        const totalPages = Math.ceil(totalUsers / normalizedLimit)
 
         res.status(200).json({
             customers: users,
             pagination: {
                 totalUsers,
                 totalPages,
-                currentPage: Number(page),
-                pageSize: Number(limit),
+                currentPage: normalizedPage,
+                pageSize: normalizedLimit,
             },
         })
     } catch (error) {
@@ -155,8 +161,6 @@ export const getCustomers = async (
     }
 }
 
-// TODO: Добавить guard admin
-// Get /customers/:id
 export const getCustomerById = async (
     req: Request,
     res: Response,
@@ -173,29 +177,31 @@ export const getCustomerById = async (
     }
 }
 
-// TODO: Добавить guard admin
-// Patch /customers/:id
-// controllers/customers.ts
 export const updateCustomer = async (req: Request, res: Response, next: NextFunction) => {
-    const allowedFields = ['name', 'phone', 'email']
-    const updateData: Record<string, unknown> = {}
-    
-    for (const field of allowedFields) {
-        if (req.body[field] !== undefined) {
-            updateData[field] = req.body[field]
+    try {
+        const allowedFields = ['name', 'phone', 'email']
+        const updateData: Record<string, unknown> = {}
+        
+        for (const field of allowedFields) {
+            if (req.body[field] !== undefined) {
+                updateData[field] = req.body[field]
+            }
         }
+        
+        const updatedUser = await User.findByIdAndUpdate(
+            req.params.id,
+            updateData,
+            { new: true, runValidators: true }
+        ).orFail(
+            () => new NotFoundError('Пользователь по заданному id отсутствует в базе')
+        )
+        
+        res.status(200).json(updatedUser)
+    } catch (error) {
+        next(error)
     }
-    
-    const updatedUser = await User.findByIdAndUpdate(
-        req.params.id,
-        updateData,
-        { new: true, runValidators: true }
-    )
 }
 
-
-// TODO: Добавить guard admin
-// Delete /customers/:id
 export const deleteCustomer = async (
     req: Request,
     res: Response,
