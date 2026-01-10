@@ -2,7 +2,7 @@ import { errors } from 'celebrate'
 import cookieParser from 'cookie-parser'
 import cors from 'cors'
 import 'dotenv/config'
-import express, { json, urlencoded } from 'express'
+import express, { json, urlencoded, Request, Response, NextFunction } from 'express'
 import mongoose from 'mongoose'
 import path from 'path'
 import rateLimit from 'express-rate-limit'
@@ -16,17 +16,10 @@ import routes from './routes'
 // CORS настройки
 const allowedOrigins = ['http://localhost:5173', 'http://localhost:3000', 'http://localhost']
 
-const corsOptions: cors.CorsOptions = {
-    origin: allowedOrigins,
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'x-csrf-token'],
-}
-
-// Rate limiting - строгий лимит для теста
+// Rate limiting
 const limiter = rateLimit({
-    windowMs: 1 * 60 * 1000, // 1 минута
-    max: 50, // 50 запросов в минуту
+    windowMs: 1 * 60 * 1000,
+    max: 50,
     message: { message: 'Слишком много запросов, попробуйте позже' },
     standardHeaders: true,
     legacyHeaders: false,
@@ -45,7 +38,26 @@ app.set('trust proxy', 1)
 
 // Middleware
 app.use(helmet())
-app.use(cors(corsOptions))
+
+// Ручной CORS middleware для гарантированной установки заголовков
+app.use((req: Request, res: Response, next: NextFunction) => {
+    const origin = req.headers.origin
+    
+    if (origin && allowedOrigins.includes(origin)) {
+        res.setHeader('Access-Control-Allow-Origin', origin)
+        res.setHeader('Access-Control-Allow-Credentials', 'true')
+        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS')
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-csrf-token')
+    }
+    
+    // Preflight request
+    if (req.method === 'OPTIONS') {
+        return res.sendStatus(204)
+    }
+    
+    next()
+})
+
 app.use(cookieParser())
 app.use(limiter)
 app.use(json({ limit: '10kb' }))
