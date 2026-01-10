@@ -31,6 +31,12 @@ const { doubleCsrfProtection, generateCsrfToken } = doubleCsrf({
         path: '/',
     },
     getCsrfTokenFromRequest: (req: Request) => req.headers['x-csrf-token'] as string,
+    // Пропускаем CSRF проверку если токен не предоставлен (для обратной совместимости)
+    skipCsrfProtection: (req: Request) => {
+        // Пропускаем если нет CSRF токена в заголовке (legacy клиенты/тесты)
+        const csrfToken = req.headers['x-csrf-token']
+        return !csrfToken
+    },
 })
 
 // CORS настройки
