@@ -1,5 +1,4 @@
 import { errors } from 'celebrate'
-import { doubleCsrf } from 'csrf-csrf'
 import cookieParser from 'cookie-parser'
 import cors from 'cors'
 import 'dotenv/config'
@@ -14,44 +13,20 @@ import errorHandler from './middlewares/error-handler'
 import serveStatic from './middlewares/serverStatic'
 import routes from './routes'
 
-// CSRF защита
-const { doubleCsrfProtection, generateCsrfToken } = doubleCsrf({
-    getSecret: () => process.env.CSRF_SECRET || 'super-secret-csrf-key-change-in-production',
-    getSessionIdentifier: (req: Request) => {
-        return req.ip || req.headers['user-agent'] || 'anonymous'
-    },
-    cookieName: 'csrf-token',
-    cookieOptions: {
-        httpOnly: true,
-        sameSite: 'lax',
-        secure: process.env.NODE_ENV === 'production',
-        path: '/',
-    },
-    getCsrfTokenFromRequest: (req: Request) => req.headers['x-csrf-token'] as string,
-    skipCsrfProtection: (req: Request) => {
-        const csrfToken = req.headers['x-csrf-token']
-        return !csrfToken
-    },
-})
+// CORS настройки - явно указываем origin
+const allowedOrigins = ['http://localhost:5173', 'http://localhost:3000', 'http://localhost']
 
-// CORS настройки
-const corsOptions = {
-    origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
-        const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || [
-            'http://localhost:5173',
-            'http://localhost:3000',
-            'http://localhost'
-        ]
-        
-        // Разрешаем запросы без origin (например, от curl или мобильных приложений)
+const corsOptions: cors.CorsOptions = {
+    origin: (origin, callback) => {
+        // Разрешаем запросы без origin (curl, мобильные приложения)
         if (!origin) {
             return callback(null, true)
         }
         
         if (allowedOrigins.includes(origin)) {
-            callback(null, true)
+            callback(null, origin) // Возвращаем конкретный origin, а не true
         } else {
-            callback(null, false)
+            callback(new Error('Not allowed by CORS'))
         }
     },
     credentials: true,
@@ -59,13 +34,15 @@ const corsOptions = {
     allowedHeaders: ['Content-Type', 'Authorization', 'x-csrf-token'],
 }
 
-// Rate limiting - более строгий лимит
+// Rate limiting - строгий лимит
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 минут
     max: 100, // 100 запросов на 15 минут
     message: { message: 'Слишком много запросов, попробуйте позже' },
     standardHeaders: true,
     legacyHeaders: false,
+    skipSuccessfulRequests: false,
+    skipFailedRequests: false,
 })
 
 const authLimiter = rateLimit({
@@ -83,7 +60,7 @@ app.set('trust proxy', 1)
 app.use(helmet())
 app.use(cors(corsOptions))
 app.use(cookieParser())
-app.use(limiter) // Rate limiting должен быть раньше
+app.use(limiter)
 app.use(json({ limit: '10kb' }))
 app.use(urlencoded({ extended: true, limit: '10kb' }))
 app.use(serveStatic(path.join(__dirname, 'public')))
@@ -91,12 +68,6 @@ app.use(serveStatic(path.join(__dirname, 'public')))
 // Auth rate limiting
 app.use('/auth/login', authLimiter)
 app.use('/auth/register', authLimiter)
-
-// Endpoint для получения CSRF токена
-app.get('/csrf-token', (req: Request, res: Response) => {
-    const token = generateCsrfToken(req, res)
-    res.json({ csrfToken: token })
-})
 
 // Routes
 app.use(routes)

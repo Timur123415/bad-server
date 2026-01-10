@@ -1,16 +1,12 @@
 import { NextFunction, Request, Response } from 'express'
 import { FilterQuery, Error as MongooseError, Types } from 'mongoose'
-import createDOMPurify from 'dompurify'
-import { JSDOM } from 'jsdom'
+import DOMPurify from 'isomorphic-dompurify'
 import BadRequestError from '../errors/bad-request-error'
 import NotFoundError from '../errors/not-found-error'
 import Order, { IOrder } from '../models/order'
 import Product, { IProduct } from '../models/product'
 import User from '../models/user'
 import escapeRegExp from '../utils/escapeRegExp'
-
-const window = new JSDOM('').window
-const DOMPurify = createDOMPurify(window)
 
 const MAX_LIMIT = 10
 const ALLOWED_SORT_FIELDS = ['createdAt', 'totalAmount', 'orderNumber', 'status']
@@ -34,11 +30,9 @@ export const getOrders = async (
             search,
         } = req.query
 
-        // Нормализация лимита
         const normalizedLimit = Math.min(Math.max(1, Number(limit) || 10), MAX_LIMIT)
         const normalizedPage = Math.max(1, Number(page) || 1)
 
-        // Валидация sortField
         const safeSortField = ALLOWED_SORT_FIELDS.includes(sortField as string) 
             ? sortField as string 
             : 'createdAt'
@@ -48,8 +42,10 @@ export const getOrders = async (
         if (status) {
             if (typeof status === 'string') {
                 filters.status = status
+            } else {
+                // Отклоняем объекты для предотвращения NoSQL инъекций
+                return next(new BadRequestError('Некорректный формат параметра status'))
             }
-            // Игнорируем объекты для предотвращения инъекций
         }
 
         if (totalAmountFrom) {
@@ -183,20 +179,11 @@ export const getOrdersCurrentUser = async (
             .populate({
                 path: 'orders',
                 populate: [
-                    {
-                        path: 'products',
-                    },
-                    {
-                        path: 'customer',
-                    },
+                    { path: 'products' },
+                    { path: 'customer' },
                 ],
             })
-            .orFail(
-                () =>
-                    new NotFoundError(
-                        'Пользователь по заданному id отсутствует в базе'
-                    )
-            )
+            .orFail(() => new NotFoundError('Пользователь по заданному id отсутствует в базе'))
 
         let orders = user.orders as unknown as IOrder[]
 
@@ -214,8 +201,7 @@ export const getOrdersCurrentUser = async (
                     productIds.some((id) => id.equals(product._id))
                 )
                 const matchesOrderNumber =
-                    !Number.isNaN(searchNumber) &&
-                    order.orderNumber === searchNumber
+                    !Number.isNaN(searchNumber) && order.orderNumber === searchNumber
 
                 return matchesOrderNumber || matchesProductTitle
             })
@@ -246,16 +232,9 @@ export const getOrderByNumber = async (
     next: NextFunction
 ) => {
     try {
-        const order = await Order.findOne({
-            orderNumber: req.params.orderNumber,
-        })
+        const order = await Order.findOne({ orderNumber: req.params.orderNumber })
             .populate(['customer', 'products'])
-            .orFail(
-                () =>
-                    new NotFoundError(
-                        'Заказ по заданному id отсутствует в базе'
-                    )
-            )
+            .orFail(() => new NotFoundError('Заказ по заданному id отсутствует в базе'))
         return res.status(200).json(order)
     } catch (error) {
         if (error instanceof MongooseError.CastError) {
@@ -272,20 +251,12 @@ export const getOrderCurrentUserByNumber = async (
 ) => {
     const userId = res.locals.user._id
     try {
-        const order = await Order.findOne({
-            orderNumber: req.params.orderNumber,
-        })
+        const order = await Order.findOne({ orderNumber: req.params.orderNumber })
             .populate(['customer', 'products'])
-            .orFail(
-                () =>
-                    new NotFoundError(
-                        'Заказ по заданному id отсутствует в базе'
-                    )
-            )
+            .orFail(() => new NotFoundError('Заказ по заданному id отсутствует в базе'))
+        
         if (!order.customer._id.equals(userId)) {
-            return next(
-                new NotFoundError('Заказ по заданному id отсутствует в базе')
-            )
+            return next(new NotFoundError('Заказ по заданному id отсутствует в базе'))
         }
         return res.status(200).json(order)
     } catch (error) {
@@ -305,10 +276,8 @@ export const createOrder = async (
         const basket: IProduct[] = []
         const products = await Product.find<IProduct>({})
         const userId = res.locals.user._id
-        const { address, payment, phone, total, email, items, comment } =
-            req.body
+        const { address, payment, phone, total, email, items, comment } = req.body
 
-        // Санитизация комментария
         const sanitizedComment = comment ? DOMPurify.sanitize(comment, { ALLOWED_TAGS: [] }) : ''
 
         items.forEach((id: Types.ObjectId) => {
@@ -321,6 +290,7 @@ export const createOrder = async (
             }
             return basket.push(product)
         })
+        
         const totalBasket = basket.reduce((a, c) => a + c.price, 0)
         if (totalBasket !== total) {
             return next(new BadRequestError('Неверная сумма заказа'))
@@ -360,12 +330,7 @@ export const updateOrder = async (
             { status },
             { new: true, runValidators: true }
         )
-            .orFail(
-                () =>
-                    new NotFoundError(
-                        'Заказ по заданному id отсутствует в базе'
-                    )
-            )
+            .orFail(() => new NotFoundError('Заказ по заданному id отсутствует в базе'))
             .populate(['customer', 'products'])
         return res.status(200).json(updatedOrder)
     } catch (error) {
@@ -386,12 +351,7 @@ export const deleteOrder = async (
 ) => {
     try {
         const deletedOrder = await Order.findByIdAndDelete(req.params.id)
-            .orFail(
-                () =>
-                    new NotFoundError(
-                        'Заказ по заданному id отсутствует в базе'
-                    )
-            )
+            .orFail(() => new NotFoundError('Заказ по заданному id отсутствует в базе'))
             .populate(['customer', 'products'])
         return res.status(200).json(deletedOrder)
     } catch (error) {
